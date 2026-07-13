@@ -21,7 +21,7 @@
 
 1. Склонируйте репозиторий:
    ```bash
-   git clone <github.com/limpjungle/mdtotxt/>
+   git clone github.com/limpjungle/mdtotxt/
    cd mdtotxt
 Запустите все сервисы:
 
