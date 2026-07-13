@@ -4,8 +4,10 @@ import tempfile
 import markdown
 from bs4 import BeautifulSoup
 from flask import Flask, request, render_template_string, send_file, jsonify
+from prometheus_flask_exporter import PrometheusMetrics
 
 app = Flask(__name__)
+metrics = PrometheusMetrics(app)
 
 HTML_FORM = """
 <!doctype html>
