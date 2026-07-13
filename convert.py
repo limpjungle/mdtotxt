@@ -1,56 +1,83 @@
-import sys
 import os
-import argparse
 import re
-
+import tempfile
 import markdown
 from bs4 import BeautifulSoup
+from flask import Flask, request, render_template_string, send_file, jsonify
+
+app = Flask(__name__)
+
+HTML_FORM = """
+<!doctype html>
+<title>MD to TXT Converter</title>
+<h1>Загрузите Markdown-файл</h1>
+<form method=post enctype=multipart/form-data action=/convert>
+  <input type=file name=file accept=".md,.markdown">
+  <input type=submit value="Конвертировать">
+</form>
+"""
 
 
 def md_to_plain_text(md_content: str) -> str:
-    # Markdown to HTML
     html = markdown.markdown(md_content)
-    # Txt from HTML
     soup = BeautifulSoup(html, "html.parser")
     text = soup.get_text()
-    # delete empty strings
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
 
 
-def main():
-    parser = argparse.ArgumentParser(
-        description="Convert .md to .txt, deletete Markdown."
-    )
-    parser.add_argument("input", help="Path to input .md file")
-    parser.add_argument("-o", "--output", help="Path to output .txt File.")
-    args = parser.parse_args()
+@app.route("/")
+def index():
+    return render_template_string(HTML_FORM)
 
-    # Check input file
-    if not os.path.isfile(args.input):
-        print(f'Error: file "{args.input}" not found.', file=sys.stderr)
-        sys.exit(1)
 
-    # Read .md
-    with open(args.input, "r", encoding="utf-8") as f:
-        md_content = f.read()
+@app.route("/convert", methods=["POST"])
+def convert():
+    if "file" not in request.files:
+        return jsonify({"error": "No file provided"}), 400
 
-    # Converting
-    plain_text = md_to_plain_text(md_content)
+    file = request.files["file"]
+    filename = file.filename
 
-    # Name output file
-    if args.output:
-        out_path = args.output
-    else:
-        base = os.path.splitext(args.input)[0]
-        out_path = base + ".txt"
+    if not filename:
+        return jsonify({"error": "Empty filename"}), 400
 
-    # Write result
-    with open(out_path, "w", encoding="utf-8") as f:
-        f.write(plain_text)
+    suffix = os.path.splitext(filename)[1] if "." in filename else ".md"
 
-    print(f"Done: {out_path}")
+    with tempfile.NamedTemporaryFile(
+        mode="w+", suffix=suffix, delete=False, encoding="utf-8"
+    ) as tmp:
+        file.save(tmp.name)
+        tmp_path = tmp.name
+
+    out_tmp_path = None  # <-- инициализация перед try
+    try:
+        with open(tmp_path, "r", encoding="utf-8") as f:
+            md_content = f.read()
+        plain_text = md_to_plain_text(md_content)
+
+        with tempfile.NamedTemporaryFile(
+            mode="w+", suffix=".txt", delete=False, encoding="utf-8"
+        ) as out_tmp:
+            out_tmp.write(plain_text)
+            out_tmp_path = out_tmp.name
+
+        download_name = os.path.splitext(filename)[0] + ".txt"
+        return send_file(
+            out_tmp_path,
+            as_attachment=True,
+            download_name=download_name,
+            mimetype="text/plain",
+        )
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        # удаляем временные файлы
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+        if out_tmp_path and os.path.exists(out_tmp_path):
+            os.unlink(out_tmp_path)
 
 
 if __name__ == "__main__":
-    main()
+    app.run(host="0.0.0.0", port=5000)
